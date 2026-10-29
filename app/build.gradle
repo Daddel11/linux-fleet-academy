@@ -1,0 +1,14 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.fleetacademy.game'
+    compileSdk 36
+    buildToolsVersion '36.1.0'
+    defaultConfig {
+        applicationId 'com.fleetacademy.game'
+        minSdk 23
+        targetSdk 36
+        versionCode 3
+        versionName '0.3'
+    }
+}
