@@ -23,6 +23,8 @@ class MenuView extends View {
         void onBadges();
 
         void onGalaxy();
+
+        void onPrototype();
     }
 
     private final Host host;
@@ -71,19 +73,19 @@ class MenuView extends View {
     }
 
     private RectF btn(int i) {
-        float top = h * 0.60f + i * h * 0.085f;
-        return new RectF(w * 0.12f, top, w * 0.88f, top + h * 0.062f);
+        float top = h * 0.59f + i * h * 0.072f;
+        return new RectF(w * 0.12f, top, w * 0.88f, top + h * 0.058f);
     }
 
     private int buttons() {
-        return hasSave ? 4 : 3;
+        return hasSave ? 5 : 4;
     }
 
     private String label(int i) {
         if (hasSave) {
-            return new String[]{"CONTINUE MISSION", "NEW GAME", "BADGE COLLECTION", "GALAXY MAP"}[i];
+            return new String[]{"CONTINUE MISSION", "NEW GAME", "BADGE COLLECTION", "GALAXY MAP", "TUX FORTUNA PROTOTYPE"}[i];
         }
-        return new String[]{"START MISSION", "BADGE COLLECTION", "GALAXY MAP"}[i];
+        return new String[]{"START MISSION", "BADGE COLLECTION", "GALAXY MAP", "TUX FORTUNA PROTOTYPE"}[i];
     }
 
     private int action(int i) {
@@ -205,8 +207,11 @@ class MenuView extends View {
                     case 2:
                         host.onBadges();
                         break;
-                    default:
+                    case 3:
                         host.onGalaxy();
+                        break;
+                    case 4:
+                        host.onPrototype();
                         break;
                 }
             }

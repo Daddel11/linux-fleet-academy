@@ -181,6 +181,16 @@ final class GameData {
         return ROOMS.get(0);
     }
 
+    static String prototypeRoomName(R room) {
+        switch (room.id) {
+            case "crew": return "TUX FORTUNA / HUB";
+            case "reactor": return "SERVER FARM";
+            case "medbay": return "ENGINEERING";
+            case "canteen": return "CANTEEN";
+            default: return room.name;
+        }
+    }
+
     static M mission(String id) {
         for (M m : MISSIONS) if (m.id.equals(id)) return m;
         return null;

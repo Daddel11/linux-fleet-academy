@@ -126,7 +126,16 @@ class ShipView extends View {
         return x >= x1 && x <= x2 && y >= y1 && y <= y2;
     }
 
+    private boolean prototypeActive() {
+        return host instanceof MainActivity && ((MainActivity) host).prototypeActive();
+    }
+
+    private boolean prototypeCondition(String key) {
+        return prototypeActive() && ((MainActivity) host).prototypeCondition(key);
+    }
+
     private boolean gateOpen(GameData.D d) {
+        if (prototypeActive()) return true;
         for (String need : d.needs) if (!host.isDone(need)) return false;
         return true;
     }
@@ -319,7 +328,9 @@ class ShipView extends View {
                 }
             }
         }
-        say(null, "No one in reach. Walk up to a crew member or a glowing console, then tap ACTION.",
+        say(null, prototypeActive()
+                        ? "Walk up to a crew member, projector or console, then tap ACTION. Drag WALK to explore."
+                        : "No one in reach. Walk up to a crew member or a glowing console, then tap ACTION.",
                 null);
     }
 
@@ -495,7 +506,8 @@ class ShipView extends View {
                 pixelRect(c, 0xff30231e, gx + 12, r.y1 + 2, gx + 18, r.y1 + 12);
             }
             stroke(c, 0xff9b7048, 4f, r.x1, r.y1, r.x2, r.y2, 0);
-            textC(c, r.name, (r.x1 + r.x2) / 2f, r.y1 + 40, 12, 0xffe3c291, true);
+            textC(c, prototypeActive() ? GameData.prototypeRoomName(r) : r.name,
+                    (r.x1 + r.x2) / 2f, r.y1 + 40, 12, 0xffe3c291, true);
         }
     }
 
@@ -666,7 +678,10 @@ class ShipView extends View {
                 for (int i = 0; i < 3; i++) {
                     pixelRect(c, 0xff252a2c, 10, 12 + i * 12, 54, 22 + i * 12);
                     pixelRect(c, 0xffb9824e, 14, 16 + i * 12, 36, 18 + i * 12);
-                    pixelRect(c, 0xff80c7a5, 44, 16 + i * 12, 48, 20 + i * 12);
+                    boolean prototypeRack = prototypeActive() && pr.x >= 180 && pr.x < 830
+                            && pr.y >= 3000 && pr.y < 3560;
+                    pixelRect(c, prototypeRack && !prototypeCondition("index") ? 0xff403b32 : 0xff80c7a5,
+                            44, 16 + i * 12, 48, 20 + i * 12);
                 }
             } else {
                 pixelRect(c, 0xff202b2d, 8, 12, 56, 42);
@@ -682,16 +697,64 @@ class ShipView extends View {
             pixelRect(c, 0xffe3b578, 54, 54, 58, 58);
         }
         c.restore();
+        if (prototypeActive()) drawPrototypeProp(c, pr);
+    }
+
+    private void drawPrototypeProp(Canvas c, GameData.P pr) {
+        if (pr.type == GameData.RACK && pr.x >= 180 && pr.x < 830 && pr.y >= 3000 && pr.y < 3560) {
+            boolean indexed = prototypeCondition("index");
+            for (int i = 0; i < 3; i++) {
+                pixelRect(c, indexed ? 0xff70ff9e : 0xff403b32,
+                        pr.x + pr.w * .68f, pr.y + 28 + i * 24, pr.x + pr.w * .82f, pr.y + 36 + i * 24);
+            }
+            if (pr.x == 230 && pr.y == 3080) {
+                textC(c, indexed ? "INDEX ONLINE" : "INDEX OFFLINE", pr.x + pr.w / 2f, pr.y - 10, 10, 0xffb9f8d3, true);
+            }
+        } else if (pr.type == GameData.REACTOR && pr.x == 1100 && pr.y == 3940) {
+            boolean running = prototypeCondition("engine");
+            boolean cooling = prototypeCondition("cooling");
+            float cx = pr.x + pr.w / 2f, cy = pr.y + pr.h / 2f;
+            textC(c, cooling ? "COOLING ON" : "COOLING OFF", cx, pr.y - 25, 10, 0xffa4eaff, true);
+            if (cooling) {
+                for (int i = 0; i < 3; i++) {
+                    float y = pr.y + 32 + i * 50 + (SystemClock.uptimeMillis() % 900) / 90f;
+                    pixelRect(c, 0xff80eaff, pr.x + 8, y, pr.x + 32, y + 5);
+                    pixelRect(c, 0xff80eaff, pr.x + pr.w - 32, y, pr.x + pr.w - 8, y + 5);
+                }
+            }
+            p.setColor(0xff202b32);
+            c.drawCircle(cx, cy, 38, p);
+            c.save();
+            c.rotate(running ? (SystemClock.uptimeMillis() % 1200) * .3f : 0, cx, cy);
+            pixelRect(c, running ? 0xffffd273 : 0xff756252, cx - 5, cy - 32, cx + 5, cy + 32);
+            pixelRect(c, running ? 0xffffd273 : 0xff756252, cx - 32, cy - 5, cx + 32, cy + 5);
+            c.restore();
+            textC(c, running ? "ENGINE RUNNING" : "ENGINE OFF", cx, pr.y - 10, 11, 0xffffd49d, true);
+        } else if (pr.type == GameData.CONSOLE && pr.x == 560 && pr.y == 3830) {
+            boolean printing = prototypeCondition("galley");
+            textC(c, printing ? "GALLEY PRINTER ON" : "GALLEY PRINTER OFF",
+                    pr.x + pr.w / 2f, pr.y - 10, 10, 0xffffd6a2, true);
+            if (printing) {
+                pixelRect(c, 0xffffe9bd, pr.x + 20, pr.y + 35, pr.x + 60, pr.y + 52);
+                pixelRect(c, 0xffc28a50, pr.x + 26, pr.y + 40, pr.x + 54, pr.y + 44);
+            }
+        }
     }
 
     private void drawPixelNpc(Canvas c, GameData.N n) {
+        if (prototypeActive() && n.id.equals("nova") && !prototypeCondition("storage")) {
+            pixelRect(c, 0xff476474, n.x - 20, n.y - 4, n.x + 20, n.y + 4);
+            textC(c, "PROJECTOR / ACTION", n.x, n.y - 12, 10, 0xffa4eaff, true);
+            textC(c, "STORAGE OFFLINE", n.x, n.y - 26, 10, 0xffa4eaff, true);
+            return;
+        }
         GameData.M m = GameData.mission(n.mission);
         boolean done = m != null && host.isDone(m.id);
         boolean nova = n.id.equals("nova") || n.id.equals("nova2");
         pixelPerson(c, n.x, n.y, n.color, false, "down", nova);
         textC(c, n.name, n.x, n.y + 22, 9, 0xffcfe9ff, true);
-        pixelRect(c, done ? 0xff42f5a7 : 0xffffd166, n.x + 16, n.y - 55, n.x + 28, n.y - 43);
-        textC(c, done ? "v" : "!", n.x + 22, n.y - 45, 10, 0xff04121c, true);
+        pixelRect(c, done && !prototypeActive() ? 0xff42f5a7 : 0xffffd166, n.x + 16, n.y - 55, n.x + 28, n.y - 43);
+        textC(c, done && !prototypeActive() ? "v" : "!", n.x + 22, n.y - 45, 10, 0xff04121c, true);
     }
 
     private void pixelPerson(Canvas c, float x, float y, int coat, boolean moving, String face, boolean hologram) {
@@ -964,16 +1027,20 @@ class ShipView extends View {
             c.drawRect(18, 19 + i * 9, 46, 22 + i * 9, p);
         }
 
-        text(c, "BLACKSTAR", 68, 20, 13, 0xffe3f6ff, true);
-        text(c, "SYSTEMD DECK  /  " + doneCount() + " OF " + GameData.MISSIONS.size() + " SYSTEMS",
+        text(c, prototypeActive() ? "TUX FORTUNA" : "BLACKSTAR", 68, 20, 13, 0xffe3f6ff, true);
+        text(c, prototypeActive() ? "WORLD PROTOTYPE" : "SYSTEMD DECK  /  " + doneCount() + " OF " + GameData.MISSIONS.size() + " SYSTEMS",
                 68, 36, 8.5f, 0xff5fb9d4, false);
 
         box(c, 0xcc122436, 290, 8, 392, 46, 12);
         neonStroke(c, 0xffd166ff, 1.5f, 290, 8, 392, 46, 12);
         textC(c, "BADGES", 341, 30, 10, 0xfff1d6ff, true);
 
-        GameData.M next = nextMission();
-        if (next != null) {
+        GameData.M next = prototypeActive() ? null : nextMission();
+        if (prototypeActive()) {
+            box(c, 0xaa0a1626, 10, 62, VIEW_W - 10, 100, 8);
+            text(c, "HUB -> NORTH: CANTEEN / ENGINEERING", 22, 77, 9, 0xff9fe9ff, true);
+            text(c, "FURTHER NORTH: SERVER FARM  |  WALK + ACTION", 22, 92, 8.5f, 0xff9fe9ff, false);
+        } else if (next != null) {
             box(c, 0xaa0a1626, 10, 62, VIEW_W - 10, 88, 8);
             p.setColor(0xff2b6f8f);
             c.drawRect(10, 62, 14, 88, p);
@@ -1021,7 +1088,7 @@ class ShipView extends View {
         String found = "";
         for (GameData.R r : GameData.ROOMS) {
             if (inRect(px, py, r.x1, r.y1, r.x2, r.y2)) {
-                found = r.name;
+                found = prototypeActive() ? GameData.prototypeRoomName(r) : r.name;
                 break;
             }
         }

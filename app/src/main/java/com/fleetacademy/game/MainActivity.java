@@ -26,6 +26,10 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import com.fleetacademy.game.simulator.Simulator;
+
+import java.io.IOException;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -47,6 +51,9 @@ public class MainActivity extends Activity implements ShipView.Host, MenuView.Ho
     private SimShell shell;
     private boolean inGame;
     private Dialog openDialog;
+    private PrototypeSession prototype;
+    private boolean prototypeMode;
+    private String prototypeDraft = "";
 
     @Override
     public void onCreate(Bundle state) {
@@ -60,14 +67,55 @@ public class MainActivity extends Activity implements ShipView.Host, MenuView.Ho
         shell.restore(prefs.getString("shell_state", null));
         shell.setListener((cmd, output) -> saveShell());
         showMenu();
+        if (state != null && state.getBoolean("prototype_active")) {
+            prototypeDraft = state.getString("prototype_draft", "");
+            onPrototype();
+        }
     }
 
     /* ------------------------------------------------------------- screen */
 
     private void showMenu() {
         inGame = false;
+        prototypeMode = false;
+        ship = null;
         boolean started = prefs.getBoolean("started", false);
         setContentView(new MenuView(this, this, started, done.size()));
+    }
+
+    @Override
+    public void onPrototype() {
+        try {
+            prototype = new PrototypeSession(getSharedPreferences("tux_fortuna_prototype_v1", MODE_PRIVATE));
+        } catch (IOException | ClassCastException e) {
+            new AlertDialog.Builder(this).setTitle("Prototype save unavailable")
+                    .setMessage("The Tux Fortuna snapshot could not be loaded. It has not been changed. Blackstar is unaffected.\n\n" + e.getMessage())
+                    .setPositiveButton("Close", null).show();
+            return;
+        }
+        prototypeMode = true;
+        inGame = true;
+        SharedPreferences pp = getSharedPreferences("tux_fortuna_prototype_v1", MODE_PRIVATE);
+        Map<String, ?> values = pp.getAll();
+        ship = new ShipView(this, this, PositionPreferences.coordinate(values.get("x"), 900f),
+                PositionPreferences.coordinate(values.get("y"), 4820f));
+        setContentView(ship);
+        prototypeGuide();
+    }
+
+    boolean prototypeActive() {
+        return prototypeMode && prototype != null;
+    }
+
+    boolean prototypeCondition(String key) {
+        return prototypeActive() && key != null && prototype.condition(key);
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        out.putBoolean("prototype_active", prototypeActive());
+        out.putString("prototype_draft", prototypeDraft);
+        super.onSaveInstanceState(out);
     }
 
     @Override
@@ -147,6 +195,7 @@ public class MainActivity extends Activity implements ShipView.Host, MenuView.Ho
 
     @Override
     public void talk(GameData.N npc) {
+        if (prototypeActive()) { prototypeGuide(); return; }
         GameData.M m = GameData.mission(npc.mission);
         if (m == null) return;
         if (isDone(m.id)) {
@@ -161,6 +210,7 @@ public class MainActivity extends Activity implements ShipView.Host, MenuView.Ho
 
     @Override
     public void openMission(GameData.M m) {
+        if (prototypeActive()) { openPrototypeTerminal(); return; }
         if (m == null) return;
         if (isDone(m.id)) {
             if (m.type == GameData.SHELL) openTerminal(m);
@@ -179,6 +229,17 @@ public class MainActivity extends Activity implements ShipView.Host, MenuView.Ho
 
     @Override
     public void pauseMenu() {
+        if (prototypeActive()) {
+            savePosition();
+            new AlertDialog.Builder(this).setTitle("TUX FORTUNA - PAUSED")
+                    .setItems(new String[]{"Resume", "Terminal", "Aufgaben und Hilfe", "Hauptmenue"},
+                            (d, which) -> {
+                                if (which == 1) openPrototypeTerminal();
+                                else if (which == 2) prototypeGuide();
+                                else if (which == 3) showMenu();
+                            }).setNegativeButton("Close", null).show();
+            return;
+        }
         if (ship != null) {
             prefs.edit().putFloat("x", ship.x()).putFloat("y", ship.y()).apply();
         }
@@ -203,6 +264,7 @@ public class MainActivity extends Activity implements ShipView.Host, MenuView.Ho
 
     @Override
     public void badges() {
+        if (prototypeActive()) { prototypeGuide(); return; }
         showBadges(inGame && ship != null ? this::resumeGame : this::showMenu);
     }
 
@@ -450,6 +512,83 @@ public class MainActivity extends Activity implements ShipView.Host, MenuView.Ho
     }
 
     /* ------------------------------------------------------------ terminal */
+
+    private void prototypeGuide() {
+        String status = "DATEN / B0-OT\n" + mark(prototypeCondition("storage"))
+                + " Speicherordner: mkdir /storage/robot\n" + mark(prototypeCondition("index"))
+                + " Index: systemctl start storage-index.service\n\n"
+                + "ANTRIEB / MASCHINENRAUM\n" + mark(prototypeCondition("cooling"))
+                + " Kuehlung: systemctl start engine-cooling.service\n" + mark(prototypeCondition("engine"))
+                + " Turbine: systemctl start engine-core.service\n\n"
+                + "CREW / CHEF 404\n" + mark(prototypeCondition("galley"))
+                + " Rezept kopieren: cp /storage/recipes/soup.txt /storage/recipes/soup-backup.txt\n"
+                + "Dann: systemctl start galley-printer.service\n\n"
+                + "Alle drei Straenge sind unabhaengig. mkdir erstellt ein virtuelles Verzeichnis; "
+                + "systemctl steuert simulierte Dienste. Status pruefen mit systemctl status UNIT; "
+                + "Logs mit journalctl -u UNIT. help und man COMMAND zeigen weitere Hilfe.\n\n"
+                + "Prototyp: bestehende Schiffsansicht, keine neuen Raeume, Log-Quest oder Minispiele. "
+                + "Keine Host-Shell und kein Zugriff auf echte Dateien.";
+        new AlertDialog.Builder(this).setTitle("TUX FORTUNA / AUFGABEN")
+                .setMessage(status).setPositiveButton("Terminal", (d, w) -> openPrototypeTerminal())
+                .setNegativeButton("Schliessen", null).show();
+    }
+
+    private String mark(boolean complete) { return complete ? "[OK] " : "[ ] "; }
+
+    private void openPrototypeTerminal() {
+        if (!prototypeActive()) return;
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(10), dp(8), dp(10), dp(8));
+        box.setBackgroundColor(PANEL);
+        TextView output = label("TUX FORTUNA: isolierte Simulation. help zeigt Befehle.\n", 14, 0xffaef0c8, false);
+        output.setTypeface(Typeface.MONOSPACE);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(output);
+        box.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setTextColor(TEXT);
+        input.setHint("Befehl eingeben");
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        input.setText(prototypeDraft);
+        input.setSelection(input.length());
+        box.addView(input);
+        Button run = new Button(this);
+        run.setText("RUN");
+        box.addView(run);
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Simulator-Terminal")
+                .setView(box).setNeutralButton("Aufgaben", (d, w) -> prototypeGuide())
+                .setNegativeButton("Schliessen", null).create();
+        Runnable execute = () -> {
+            String command = input.getText().toString();
+            if (command.trim().isEmpty()) return;
+            output.append("\n$ " + command + "\n");
+            try {
+                Simulator.Result result = prototype.execute(command);
+                output.append(result.stdout + result.stderr + "[exit " + result.exitCode + "]\n");
+            } catch (IllegalStateException e) {
+                output.append("Speicherfehler: " + e.getMessage() + "\n");
+            }
+            input.setText("");
+            prototypeDraft = "";
+            if (ship != null) ship.invalidate();
+            scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
+        };
+        input.addTextChangedListener(new android.text.TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            public void onTextChanged(CharSequence s, int start, int before, int count) { prototypeDraft = s.toString(); }
+            public void afterTextChanged(android.text.Editable s) { }
+        });
+        run.setOnClickListener(v -> execute.run());
+        input.setOnEditorActionListener((v, action, event) -> { execute.run(); return true; });
+        dialog.show();
+        Window win = dialog.getWindow();
+        if (win != null) {
+            win.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+            win.setLayout(-1, (int) (getResources().getDisplayMetrics().heightPixels * 0.8f));
+        }
+    }
 
     private void openTerminal(GameData.M mission) {
         GameData.M m = mission;
@@ -789,9 +928,14 @@ public class MainActivity extends Activity implements ShipView.Host, MenuView.Ho
     @Override
     protected void onPause() {
         super.onPause();
-        if (ship != null) {
-            prefs.edit().putFloat("x", ship.x()).putFloat("y", ship.y()).apply();
-        }
+        savePosition();
+    }
+
+    private void savePosition() {
+        if (ship == null) return;
+        SharedPreferences target = prototypeActive()
+                ? getSharedPreferences("tux_fortuna_prototype_v1", MODE_PRIVATE) : prefs;
+        target.edit().putFloat("x", ship.x()).putFloat("y", ship.y()).apply();
     }
 
     @Override
